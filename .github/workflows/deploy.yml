@@ -1,0 +1,102 @@
+name: Deploy
+
+# Merge to main -> tests -> deploy -> health check. Choose the target with the repository variable DEPLOY_TARGET:
+#   cpanel : copy the published app to your cPanel server over SSH (docs/HOSTING.md)
+#   render : trigger a Render deploy through its deploy hook (docs/HOSTING_RENDER.md)
+# Needs the GitHub environment "production".
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Run CI first
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    name: Publish
+    needs: test
+    if: ${{ vars.DEPLOY_TARGET == 'cpanel' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+      - run: dotnet publish UncoveringGreatnessCRM.csproj -c Release -o publish
+      - uses: actions/upload-artifact@v4
+        with:
+          name: webapp
+          path: publish
+
+  deploy-cpanel:
+    name: Deploy to cPanel server
+    needs: publish
+    if: ${{ vars.DEPLOY_TARGET == 'cpanel' }}
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: ${{ vars.APP_URL }}
+    env:
+      SSH_HOST: ${{ vars.SSH_HOST }}
+      SSH_PORT: ${{ vars.SSH_PORT || '22' }}
+      SSH_USER: ${{ vars.SSH_USER || 'deploy' }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: webapp
+          path: publish
+
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+
+      - name: Copy files (App_Data, the database and keys are never touched)
+        run: |
+          rsync -az --delete --exclude 'App_Data/' \
+            -e "ssh -i ~/.ssh/id_deploy -p $SSH_PORT -o StrictHostKeyChecking=yes" \
+            publish/ "$SSH_USER@$SSH_HOST:/var/www/ug-crm/"
+
+      - name: Restart service
+        run: ssh -i ~/.ssh/id_deploy -p "$SSH_PORT" -o StrictHostKeyChecking=yes "$SSH_USER@$SSH_HOST" "sudo systemctl restart ug-crm"
+
+      - name: Smoke test (health endpoint)
+        run: |
+          curl --fail --silent --show-error \
+               --retry 12 --retry-delay 10 --retry-all-errors \
+               "${{ vars.APP_URL }}/api/v1/health"
+
+  deploy-render:
+    name: Deploy to Render
+    needs: test
+    if: ${{ vars.DEPLOY_TARGET == 'render' }}
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: ${{ vars.APP_URL }}
+    steps:
+      - name: Trigger Render deploy
+        env:
+          RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
+        run: curl --fail --silent --show-error -X POST "$RENDER_DEPLOY_HOOK"
+
+      - name: Smoke test (health endpoint; Render needs a few minutes to build)
+        run: |
+          sleep 60
+          curl --fail --silent --show-error \
+               --retry 30 --retry-delay 20 --retry-all-errors --max-time 90 \
+               "${{ vars.APP_URL }}/api/v1/health"

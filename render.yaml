@@ -1,0 +1,28 @@
+# Render Blueprint: Dashboard > New > Blueprint > pick this repo. Free plan, built from the Dockerfile.
+# Free web services have NO persistent disk: the SQLite database is recreated (and demo data reseeded)
+# whenever the service restarts, redeploys or wakes from idle. Fine for a demo, not for real data.
+services:
+  - type: web
+    name: ug-crm
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/v1/health
+    autoDeploy: false          # deploys are triggered by GitHub Actions, only after the tests pass
+    envVars:
+      - key: ASPNETCORE_ENVIRONMENT
+        value: Production
+      - key: PORT
+        value: "8080"
+      - key: App__PublicBaseUrl
+        sync: false            # enter https://<your-service>.onrender.com in the dashboard
+      - key: Seed__DemoData
+        value: "true"          # loads demo data; its accounts use a known demo password, so use fake data only
+      - key: Seed__Users__0__FullName
+        value: System Administrator
+      - key: Seed__Users__0__Email
+        value: admin@uncoveringgreatness.co.za
+      - key: Seed__Users__0__Role
+        value: Admin
+      - key: Seed__Users__0__Password
+        sync: false            # choose a strong admin password in the dashboard

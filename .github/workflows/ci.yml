@@ -1,0 +1,52 @@
+name: CI
+
+# Runs on every push to a working branch and on every pull request into develop or main.
+# Also reused by deploy.yml so nothing is deployed unless the tests pass.
+on:
+  push:
+    branches: [develop, 'feature/**', 'bugfix/**', 'hotfix/**', 'release/**']
+  pull_request:
+    branches: [develop, main]
+  workflow_call:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    name: Build and test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Restore
+        run: dotnet restore UncoveringGreatnessCRM.sln
+
+      - name: Build (Release)
+        run: dotnet build UncoveringGreatnessCRM.sln --no-restore -c Release
+
+      - name: Unit tests
+        run: >
+          dotnet test tests/UnitTests/UncoveringGreatnessCRM.Tests.csproj
+          --no-build -c Release
+          --logger "trx;LogFileName=test-results.trx"
+          --results-directory TestResults
+
+      - name: Check for vulnerable packages
+        run: dotnet list UncoveringGreatnessCRM.csproj package --vulnerable --include-transitive
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: TestResults/*.trx

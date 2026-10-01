@@ -1,0 +1,11 @@
+bin/
+obj/
+.vs/
+App_Data/*.db
+App_Data/*.db-*
+App_Data/keys/
+*.user
+publish/
+TestResults/
+*.trx
+.env

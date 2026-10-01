@@ -1,0 +1,63 @@
+name: Deploy
+
+# Merge to develop  -> deploys to the STAGING environment
+# Merge to main     -> deploys to the PRODUCTION environment
+# Each GitHub Environment holds its own secret and variables (see docs/HOSTING.md).
+on:
+  push:
+    branches: [develop, main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-${{ github.ref_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Run CI first
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    name: Publish
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+      - name: Publish
+        run: dotnet publish UncoveringGreatnessCRM.csproj -c Release -o publish
+      - uses: actions/upload-artifact@v4
+        with:
+          name: webapp
+          path: publish
+
+  deploy:
+    name: Deploy to Azure App Service
+    needs: publish
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
+      url: ${{ vars.APP_URL }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: webapp
+          path: publish
+
+      - name: Deploy
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ vars.AZURE_WEBAPP_NAME }}
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+          package: publish
+
+      - name: Smoke test (health endpoint)
+        run: |
+          curl --fail --silent --show-error \
+               --retry 12 --retry-delay 15 --retry-all-errors \
+               "${{ vars.APP_URL }}/api/v1/health"

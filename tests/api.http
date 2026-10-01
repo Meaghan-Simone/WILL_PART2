@@ -1,0 +1,93 @@
+### Uncovering Greatness CRM: manual API requests (Visual Studio 2022 or VS Code "REST Client")
+@host = http://localhost:5080
+@email = michaela@uncoveringgreatness.co.za
+@password = P@ssword4321
+
+### 1. Health (no token)
+GET {{host}}/api/v1/health
+
+### 2. Sign in. Copy "accessToken" from the response into @token below
+POST {{host}}/api/v1/auth/token
+Content-Type: application/json
+
+{ "email": "{{email}}", "password": "{{password}}" }
+
+###
+@token = PASTE_ACCESS_TOKEN_HERE
+
+### Who am I?
+GET {{host}}/api/v1/auth/me
+Authorization: Bearer {{token}}
+
+### My leads
+GET {{host}}/api/v1/leads?view=mine&pageSize=20
+Authorization: Bearer {{token}}
+
+### Pipeline
+GET {{host}}/api/v1/leads/pipeline
+Authorization: Bearer {{token}}
+
+### Create a lead
+POST {{host}}/api/v1/leads
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "firstName": "Test", "surname": "Lead", "email": "test.lead@example.com", "source": "Website", "stage": "Lead", "dealValue": 10000 }
+
+### Move a lead to another stage (replace 1 with a real id)
+PATCH {{host}}/api/v1/leads/1/stage
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "stage": "Qualified" }
+
+### Task board
+GET {{host}}/api/v1/tasks
+Authorization: Bearer {{token}}
+
+### Calendar for a month
+GET {{host}}/api/v1/calendar?year=2026&month=10
+Authorization: Bearer {{token}}
+
+### Dashboard / search / notifications
+GET {{host}}/api/v1/dashboard
+Authorization: Bearer {{token}}
+
+###
+GET {{host}}/api/v1/search?q=summit
+Authorization: Bearer {{token}}
+
+###
+GET {{host}}/api/v1/notifications?filter=unread
+Authorization: Bearer {{token}}
+
+### Change my password (new token is returned, the old one stops working)
+POST {{host}}/api/v1/auth/change-password
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "currentPassword": "{{password}}", "newPassword": "Choose#AStrongOne2026" }
+
+### Refresh the token
+POST {{host}}/api/v1/auth/refresh
+Authorization: Bearer {{token}}
+
+### Sign out everywhere
+POST {{host}}/api/v1/auth/revoke
+Authorization: Bearer {{token}}
+
+### ---- Admin only (sign in as admin@uncoveringgreatness.co.za) ----
+GET {{host}}/api/v1/users
+Authorization: Bearer {{token}}
+
+###
+GET {{host}}/api/v1/audit?pageSize=20
+Authorization: Bearer {{token}}
+
+### Force a user to sign in again (replace 2 with a user id)
+POST {{host}}/api/v1/users/2/revoke-sessions
+Authorization: Bearer {{token}}
+
+### Unlock a locked-out user
+POST {{host}}/api/v1/users/2/unlock
+Authorization: Bearer {{token}}
